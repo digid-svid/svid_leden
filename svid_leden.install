@@ -1,0 +1,146 @@
+<?php
+function svid_leden_schema () {
+  $schema['svid_leden'] = array (
+    'description' => 'Studievereniging i.d member information',
+    'fields' => array(
+      'uid' => array (
+        'description' => 'The Drupal UserID',
+        'type' => 'int',
+        'size' => 'normal',
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+      'studentnumber' => array (
+        'description' => 'Student number (available from TU Delft)',
+        'type' => 'int',
+        'size' => 'normal',
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+      'netid' => array(
+        'description' => 'User\'s NetID',
+        'type' => 'varchar',
+        'length' => 255,
+        'default' => NULL,
+      ),
+      'firstname' => array (
+        'description' => 'Firstname',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+      'prefix' => array (
+        'description' => 'Prefix for lastname (van, van der, etc.)',
+        'type' => 'varchar',
+        'length' => 16,
+        'default' => NULL,
+      ),
+      'lastname' => array (
+        'description' => 'Lastname',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+      'gender' => array (
+        'description' => 'Gender (M/F/U)',
+        'type' => 'int',
+        'size' => 'tiny',
+        'default' => 0,
+      ),
+      'birthdate' => array (
+        'description' => 'Birthdate (YYYYMMDD)',
+        'type' => 'int',
+        'size' => 'normal',
+        'default' => 0,
+      ),
+      'address' => array (
+        'description' => 'Address',
+        'type' => 'varchar',
+        'length' => 128,
+        'not null' => TRUE,
+      ),
+      'zipcode' => array (
+        'description' => 'Zipcode',
+        'type' => 'char',
+        'length' => 6,
+        'not null' => TRUE,
+      ),
+      'city' => array (
+        'description' => 'City of residence',
+        'type' => 'varchar',
+        'length' => 64,
+        'not null' => TRUE,
+      ),
+      'country' => array (
+        'description' => 'ISO 3166 two character code for country of residence',
+        'type' => 'char',
+        'length' => 2,
+        'not null' => TRUE,
+      ),
+      'tel_home' => array (
+        'description' => 'Home phone (incl. int\'l access code)',
+        'type' => 'varchar',
+        'length' => 12,
+      ),
+      'tel_mobile' => array (
+        'description' => 'Mobile phone (incl. int\'l access code)',
+        'type' => 'varchar',
+        'length' => 12,
+      ),
+      'tel_parents' => array (
+        'description' => 'Emergency contact (incl. int\'l access code)',
+        'type' => 'varchar',
+        'length' => 12,
+      ),
+      'member_since' => array (
+        'description' => 'First year of membership',
+        'type' => 'int',
+        'size' => 'medium',
+        'default' => 0,
+      ),
+      'student_since' => array (
+        'description' => 'First year of study',
+        'type' => 'int',
+        'size' => 'medium',
+        'default' => 0,
+      ),
+      'membership' => array (
+        'description' => 'Membership status',
+        'type' => 'int',
+        'size' => 'medium',
+        'default' => 0,
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array ('uid'),
+    'unique keys' => array (
+      'studentinfo' => array (
+        'studentnumber',
+      ),
+    ),
+  );
+
+  return $schema;
+}
+
+function svid_leden_install () {
+  drupal_install_schema ('svid_leden');
+}
+
+function svid_leden_uninstall () {
+  drupal_uninstall_schema ('svid_leden');
+}
+
+function svid_leden_update_6100() {
+  $specs = drupal_get_schema('svid_leden');
+  $ret = array();
+  db_add_field($ret, 'svid_leden', 'membership', $specs['fields']['membership']);
+  return $ret;
+}
+
+function svid_leden_update_6101() {
+  $specs = drupal_get_schema('svid_leden');
+  $ret = array();
+  db_add_field($ret, 'svid_leden', 'netid', $specs['fields']['netid']);
+  return $ret;
+}

@@ -1,0 +1,249 @@
+<?php
+/**
+ * svid_leden module.
+ *
+ * Copyright 2010 Studievereniging i.d
+ * Author: Raymond Jelierse
+ *
+ * Provided as-is.
+ */
+
+/** Constants */
+// svid_leden.gender:
+define ('GENDER_UNKNOWN',		1);
+define ('GENDER_MALE',			2);
+define ('GENDER_FEMALE',		3);
+
+/** hook_menu */
+function svid_leden_menu () {
+  $items['admin/user/user/import'] = array (
+    'title' => 'Import users',
+    'description' => 'Import information from a CSV-file to the user database.',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array ('svid_leden_import_form'),
+    'file' => 'svid_leden.admin.inc',
+    'access arguments' => array ('administer users'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['user/profile'] = array(
+    'title' => 'My profile',
+    'title callback' => 'svid_leden_get_user_name',
+    'page callback' => 'svid_leden_redirect_to_profile',
+    'access arguments' => array('access user profiles'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+function svid_leden_menu_alter(&$items) {
+  $items['user/%user_category/edit']['access callback'] = 'user_access';
+  $items['user/%user_category/edit']['access arguments'] = array('edit user profile');
+}
+
+/** hook_user */
+function svid_leden_user ($op, &$edit, &$account, $category = 'account') {
+  switch ($op) {
+    case 'load':
+    // Check if function has already ran for this page request.
+      if (isset($account->member_status)) {
+        break;
+      }
+
+      $result = db_query ("SELECT * FROM {svid_leden} WHERE uid = %d", $account->uid);
+      if ($result === FALSE) {
+        break;
+      }
+
+      // Load all available information into the user object.
+      $list = db_fetch_array($result);
+      if (!is_array($list)) {
+        break;
+      }
+
+      foreach ($list as $key => $value) {
+        $account->$key = $value;
+      }
+
+      switch ($account->membership) {
+        case 1:
+        case 2:
+        case 3:
+        case 5:
+        case 6:
+          $account->is_member = TRUE;
+          break;
+        default:
+          $account->is_member = FALSE;
+      }
+      break;
+
+    case 'insert':
+      $member = svid_leden_populate_fields($edit);
+      if ($member === FALSE) {
+        break;
+      }
+
+      if (drupal_write_record('svid_leden', $member) === FALSE) {
+        drupal_set_message(t('Failed to insert membership record.'), 'error');
+      }
+      else {
+        if ($member['studentnumber'] > 1000000) {
+          user_set_authmaps($account, array('authmap_aselect_tudStudentNumber' => $member['studentnumber']));
+        }
+      }
+      break;
+
+    case 'update':
+      $member = svid_leden_populate_fields($edit);
+      if ($member === FALSE) {
+        break;
+      }
+
+      // Check wether uid is being changed. If not, set current for reference.
+      if (empty($member['uid'])) {
+        $member['uid'] = $account->uid;
+      }
+
+      if (drupal_write_record('svid_leden', $member, 'studentnumber') === FALSE) {
+        drupal_set_message(t('Failed to update record for %cat.', array('%cat' => $category)), 'error');
+      }
+      break;
+
+    case 'delete':
+      db_query ("DELETE FROM {svid_leden} WHERE uid = %d", $account->uid);
+      break;
+
+    case 'view':
+      $smoelenboek = array(
+        '#type' => 'user_profile_category',
+        '#attributes' => array(
+          'class' => 'user-member',
+        ),
+        '#weight' => 0,
+        '#title' => t('User information'),
+      );
+
+      $smoelenboek['mail'] = array(
+        '#type' => 'user_profile_item',
+        '#title' => t('E-mail'),
+        '#value' => l($account->mail, 'mailto:' . $account->mail),
+        '#weight' => -50,
+      );
+
+      if ($account->gender) {
+        $smoelenboek['gender'] = array(
+          '#type' => 'user_profile_item',
+          '#title' => t('Gender'),
+          '#value' => ($account->gender == GENDER_MALE) ? t('Male') : t('Female'),
+          '#weight' => -47,
+        );
+      }
+
+      if ($account->tel_home) {
+        $smoelenboek['phone'] = array(
+          '#type' => 'user_profile_item',
+          '#title' => t('Home phone number'),
+          '#value' => $account->tel_home,
+          '#weight' => -48,
+        );
+      }
+
+      if ($account->tel_mobile) {
+        $smoelenboek['mobile'] = array(
+          '#type' => 'user_profile_item',
+          '#title' => t('Mobile phone number'),
+          '#value' => $account->tel_mobile,
+          '#weight' => -49,
+        );
+      }
+
+      if ($account->address && $account->zipcode && $account->city) {
+        $smoelenboek['address'] = array(
+          '#type' => 'user_profile_item',
+          '#title' => t('Home address'),
+          '#value' => sprintf('%s<br />%s %s', $account->address, $account->zipcode, $account->city),
+          '#weight' => -40,
+        );
+
+        $smoelenboek['map'] = array(
+          '#type' => 'user_profile_item',
+          '#value' => sprintf('<img src="http://maps.google.com/maps/api/staticmap?markers=%s&zoom=15&size=640x300&maptype=roadmap&sensor=false" alt="%s" />', urlencode(sprintf('%s, %s, %s', $account->address, $account->zipcode, $account->city)), t('Location')),
+          '#weight' => -39,
+        );
+      }
+
+      $account->content['smoelenboek'] = $smoelenboek;
+      break;
+
+    default:
+      break;
+  }
+}
+
+function svid_leden_perm() {
+  return array('edit user profile');
+}
+
+function svid_leden_form_user_register_alter (&$form, &$form_state) {
+  // Remove the username field, it will be generated automatically from the first and last name.
+  unset ($form['account']['name']);
+  unset ($form['account']['pass']);
+  unset ($form['account']['status']);
+
+  // Replace validation with custom function.
+  $form['#validate'] = array ('svid_leden_form_user_register_validate');
+}
+
+function svid_leden_form_user_register_validate ($form, &$form_state) {
+  // Prepare value for name...
+  $form_state['values']['name'] = empty ($form_state['values']['middlename']) ? $form_state['values']['firstname'] . ' ' . $form_state['values']['lastname'] : $form_state['values']['firstname'] . ' ' . $form_state['values']['middlename'] . ' ' . $form_state['values']['lastname'];
+  $form_state['values']['pass'] = user_password ();
+  $form_state['values']['status'] = 1;
+
+  // ... and proceed with regular validation
+  user_module_invoke ('validate', $form_state['values'], $form_state['values'], 'account');
+}
+
+function svid_leden_populate_fields(&$account) {
+  $member = array ();
+  $table = drupal_get_schema ('svid_leden');
+  if ($table === FALSE) {
+    drupal_set_message (t('Could not find schema for %table.', array ('%table' => 'svid_leden')), 'error');
+    break;
+  }
+
+  foreach ($table['fields'] as $field => $info) {
+    if (isset ($account[$field])) {
+      $member[$field] = $account[$field];
+      $account[$field] = NULL;
+    }
+  }
+
+  return (!empty($member) ? $member : FALSE);
+}
+
+function svid_leden_views_api() {
+  return array (
+    'api' => 2
+  );
+}
+
+function svid_leden_get_user_name() {
+  if (user_is_logged_in()) {
+    return $GLOBALS['user']->name;
+  }
+  else {
+    return variable_get('anonymous');
+  }
+}
+
+function svid_leden_redirect_to_profile() {
+  if (user_is_logged_in()) {
+    drupal_goto('user');
+  }
+  else {
+    drupal_goto('<front>');
+  }
+}

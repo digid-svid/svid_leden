@@ -1,0 +1,6 @@
+; $Id$
+name = Smoelenboek
+description = Smoelenboek (facebook) for Studievereniging i.d
+core = 6.x
+package = Studievereniging i.d
+version = 6.x-dev
