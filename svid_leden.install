@@ -57,40 +57,38 @@ function svid_leden_schema () {
         'description' => 'Address',
         'type' => 'varchar',
         'length' => 128,
-        'not null' => TRUE,
       ),
       'zipcode' => array (
         'description' => 'Zipcode',
-        'type' => 'char',
-        'length' => 6,
-        'not null' => TRUE,
+        'type' => 'varchar',
+        'length' => 12,
       ),
       'city' => array (
         'description' => 'City of residence',
         'type' => 'varchar',
         'length' => 64,
-        'not null' => TRUE,
       ),
       'country' => array (
         'description' => 'ISO 3166 two character code for country of residence',
         'type' => 'char',
         'length' => 2,
         'not null' => TRUE,
+        'default' => 'nl',
       ),
       'tel_home' => array (
         'description' => 'Home phone (incl. int\'l access code)',
         'type' => 'varchar',
-        'length' => 12,
+        'length' => 20,
       ),
       'tel_mobile' => array (
         'description' => 'Mobile phone (incl. int\'l access code)',
         'type' => 'varchar',
-        'length' => 12,
+        'length' => 20,
       ),
       'tel_parents' => array (
         'description' => 'Emergency contact (incl. int\'l access code)',
         'type' => 'varchar',
-        'length' => 12,
+        'length' => 20,
       ),
       'member_since' => array (
         'description' => 'First year of membership',
@@ -132,15 +130,34 @@ function svid_leden_uninstall () {
 }
 
 function svid_leden_update_6100() {
-  $specs = drupal_get_schema('svid_leden');
+  $specs = drupal_get_schema('svid_leden', TRUE);
   $ret = array();
   db_add_field($ret, 'svid_leden', 'membership', $specs['fields']['membership']);
   return $ret;
 }
 
 function svid_leden_update_6101() {
-  $specs = drupal_get_schema('svid_leden');
+  $specs = drupal_get_schema('svid_leden', TRUE);
   $ret = array();
   db_add_field($ret, 'svid_leden', 'netid', $specs['fields']['netid']);
+  return $ret;
+}
+
+function svid_leden_update_6102() {
+  $specs = drupal_get_schema('svid_leden', TRUE);
+  $ret = array();
+  db_change_field(&$ret, 'svid_leden', 'tel_home', 'tel_home', $specs['fields']['tel_home']);
+  db_change_field(&$ret, 'svid_leden', 'tel_mobile', 'tel_mobile', $specs['fields']['tel_mobile']);
+  db_change_field(&$ret, 'svid_leden', 'tel_parents', 'tel_parents', $specs['fields']['tel_parents']);
+  return $ret;
+}
+
+function svid_leden_update_6103() {
+  $specs = drupal_get_schema('svid_leden', TRUE);
+  $ret = array();
+  db_change_field(&$ret, 'svid_leden', 'address', 'address', $specs['fields']['address']);
+  db_change_field(&$ret, 'svid_leden', 'zipcode', 'zipcode', $specs['fields']['zipcode']);
+  db_change_field(&$ret, 'svid_leden', 'city', 'city', $specs['fields']['city']);
+  db_change_field(&$ret, 'svid_leden', 'country', 'country', $specs['fields']['country']);
   return $ret;
 }

@@ -1,71 +1,93 @@
 <?php
 /**
- * svid_leden module.
+ * @file svid_leden.module
+ *   Attach to the default User system for Drupal to implement extra
+ *   functionality that is required for Smoelenboek
  *
- * Copyright 2010 Studievereniging i.d
- * Author: Raymond Jelierse
- *
- * Provided as-is.
+ * @author Raymond Jelierse
  */
 
-/** Constants */
-// svid_leden.gender:
-define ('GENDER_UNKNOWN',		1);
-define ('GENDER_MALE',			2);
-define ('GENDER_FEMALE',		3);
+/**
+ * The user's gender is unknown.
+ */
+define('GENDER_UNKNOWN', 1);
+/**
+ * The user is male.
+ */
+define('GENDER_MALE', 2);
+/**
+ * The user is female.
+ */
+define('GENDER_FEMALE', 3);
 
-/** hook_menu */
-function svid_leden_menu () {
-  $items['admin/user/user/import'] = array (
-    'title' => 'Import users',
-    'description' => 'Import information from a CSV-file to the user database.',
-    'page callback' => 'drupal_get_form',
-    'page arguments' => array ('svid_leden_import_form'),
-    'file' => 'svid_leden.admin.inc',
-    'access arguments' => array ('administer users'),
-    'type' => MENU_LOCAL_TASK,
+/**
+ * Implements hook_menu()
+ */
+function svid_leden_menu() {
+  return array(
+    'admin/user/user/import' => array(
+      'title' => 'Import users',
+      'description' => 'Import information from a CSV-file to the user database.',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('svid_leden_import_form'),
+      'file' => 'svid_leden.admin.inc',
+      'access arguments' => array('administer users'),
+      'type' => MENU_LOCAL_TASK,
+    ),
   );
-
-  $items['user/profile'] = array(
-    'title' => 'My profile',
-    'title callback' => 'svid_leden_get_user_name',
-    'page callback' => 'svid_leden_redirect_to_profile',
-    'access arguments' => array('access user profiles'),
-    'type' => MENU_CALLBACK,
-  );
-
-  return $items;
 }
 
+/**
+ * Implements hook_menu_alter()
+ *
+ * Change the permissions that are required to edit the user's profile.
+ */
 function svid_leden_menu_alter(&$items) {
   $items['user/%user_category/edit']['access callback'] = 'user_access';
   $items['user/%user_category/edit']['access arguments'] = array('edit user profile');
 }
 
-/** hook_user */
-function svid_leden_user ($op, &$edit, &$account, $category = 'account') {
+/**
+ * Implements hook_user()
+ */
+function svid_leden_user($op, &$edit, &$account, $category = 'account') {
   switch ($op) {
+    case 'login':
+      if (!empty($account->aselectuid)) {
+        // Set authmap to aselectuid (this is preferred to the student number).
+        user_set_authmaps($account, array('auth_aselect' => $account->aselectuid));
+
+        // Update NetID in svid_leden table.
+        list($netid, $realm) = explode('@', $account->aselectuid, 2);
+        db_query("UPDATE {svid_leden} SET netid = '%s' WHERE uid = %d", $netid, $account->uid);
+      }
+      break;
+
     case 'load':
-    // Check if function has already ran for this page request.
+      // Check if function has already ran for this page request.
       if (isset($account->member_status)) {
         break;
       }
 
-      $result = db_query ("SELECT * FROM {svid_leden} WHERE uid = %d", $account->uid);
+      // Fetch the fields from the database
+      $result = db_query("SELECT * FROM {svid_leden} WHERE uid = %d", $account->uid);
+      // Error fetching the fields
       if ($result === FALSE) {
         break;
       }
 
-      // Load all available information into the user object.
       $list = db_fetch_array($result);
-      if (!is_array($list)) {
+      // No information found that corresponds to the user
+      if ($list === FALSE) {
         break;
       }
 
+      // Add fields to the user object
       foreach ($list as $key => $value) {
         $account->$key = $value;
       }
 
+      // Set is_member flag
       switch ($account->membership) {
         case 1:
         case 2:
@@ -80,39 +102,35 @@ function svid_leden_user ($op, &$edit, &$account, $category = 'account') {
       break;
 
     case 'insert':
-      $member = svid_leden_populate_fields($edit);
-      if ($member === FALSE) {
+      $array = svid_leden_get_fields($edit);
+      if ($array === FALSE) {
         break;
       }
 
-      if (drupal_write_record('svid_leden', $member) === FALSE) {
+      if (drupal_write_record('svid_leden', $array) === FALSE) {
         drupal_set_message(t('Failed to insert membership record.'), 'error');
-      }
-      else {
-        if ($member['studentnumber'] > 1000000) {
-          user_set_authmaps($account, array('authmap_aselect_tudStudentNumber' => $member['studentnumber']));
-        }
       }
       break;
 
     case 'update':
-      $member = svid_leden_populate_fields($edit);
-      if ($member === FALSE) {
+      $array = svid_leden_get_fields($edit);
+      if ($array === FALSE) {
         break;
       }
 
       // Check wether uid is being changed. If not, set current for reference.
-      if (empty($member['uid'])) {
-        $member['uid'] = $account->uid;
+      // @todo Is this really necessary?
+      if (empty($array['uid'])) {
+        $array['uid'] = $account->uid;
       }
 
-      if (drupal_write_record('svid_leden', $member, 'studentnumber') === FALSE) {
+      if (drupal_write_record('svid_leden', $array, 'studentnumber') === FALSE) {
         drupal_set_message(t('Failed to update record for %cat.', array('%cat' => $category)), 'error');
       }
       break;
 
     case 'delete':
-      db_query ("DELETE FROM {svid_leden} WHERE uid = %d", $account->uid);
+      db_query("DELETE FROM {svid_leden} WHERE uid = %d", $account->uid);
       break;
 
     case 'view':
@@ -182,68 +200,85 @@ function svid_leden_user ($op, &$edit, &$account, $category = 'account') {
   }
 }
 
+/**
+ * Implements hook_perm()
+ */
 function svid_leden_perm() {
   return array('edit user profile');
 }
 
-function svid_leden_form_user_register_alter (&$form, &$form_state) {
+/**
+ * Implements hook_form_user_register_alter()
+ */
+function svid_leden_form_user_register_alter(&$form, &$form_state) {
   // Remove the username field, it will be generated automatically from the first and last name.
-  unset ($form['account']['name']);
-  unset ($form['account']['pass']);
-  unset ($form['account']['status']);
+  unset($form['account']['name']);
+  unset($form['account']['pass']);
+  unset($form['account']['status']);
 
   // Replace validation with custom function.
-  $form['#validate'] = array ('svid_leden_form_user_register_validate');
+  $form['#validate'] = array('svid_leden_form_user_register_validate');
 }
 
-function svid_leden_form_user_register_validate ($form, &$form_state) {
+/**
+ * New validation function for the user_register form.
+ *
+ * After validating the results, run the original function as well.
+ *
+ * @param $form
+ *   The user_register Forms API data
+ * @param $form_state
+ *   The current state of the user_register form
+ */
+function svid_leden_form_user_register_validate($form, &$form_state) {
   // Prepare value for name...
-  $form_state['values']['name'] = empty ($form_state['values']['middlename']) ? $form_state['values']['firstname'] . ' ' . $form_state['values']['lastname'] : $form_state['values']['firstname'] . ' ' . $form_state['values']['middlename'] . ' ' . $form_state['values']['lastname'];
-  $form_state['values']['pass'] = user_password ();
+  $form_state['values']['name'] = empty($form_state['values']['middlename']) ? $form_state['values']['firstname'] . ' ' . $form_state['values']['lastname'] : $form_state['values']['firstname'] . ' ' . $form_state['values']['middlename'] . ' ' . $form_state['values']['lastname'];
+  $form_state['values']['pass'] = user_password();
   $form_state['values']['status'] = 1;
 
   // ... and proceed with regular validation
-  user_module_invoke ('validate', $form_state['values'], $form_state['values'], 'account');
+  user_module_invoke('validate', $form_state['values'], $form_state['values'], 'account');
 }
 
-function svid_leden_populate_fields(&$account) {
-  $member = array ();
-  $table = drupal_get_schema ('svid_leden');
-  if ($table === FALSE) {
-    drupal_set_message (t('Could not find schema for %table.', array ('%table' => 'svid_leden')), 'error');
-    break;
+/**
+ * Map the data in the $array to the fields that are defined in the schema,
+ * the returned array will contain the data that should be saved to svid_leden.
+ *
+ * @param $array
+ *   The data to be saved to the user.
+ * @return
+ *   The data to be saved to svid_leden, or FALSE upon error.
+ */
+function svid_leden_get_fields(&$array) {
+  $data = array();
+  // Get the schema of the svid_leden table
+  $schema = drupal_get_schema('svid_leden');
+  if ($schema === FALSE) {
+    drupal_set_message(t('Could not find schema %schema', array('%schema' => 'svid_leden')), 'error');
+    return FALSE;
   }
-
-  foreach ($table['fields'] as $field => $info) {
-    if (isset ($account[$field])) {
-      $member[$field] = $account[$field];
-      $account[$field] = NULL;
+  // Remove the uid field from processing, we do not own it's value
+  unset($schema['fields']['uid']);
+  // Set the data, as we do need that
+  $data['uid'] = $array['uid'];
+  // Go over the fields that are defined for the schema
+  foreach ($schema['fields'] as $field => $info) {
+    if (!empty($array[$field])) {
+      // Map the field from $array to $data based on the schema
+      $data[$field] = $array[$field];
+      // Unset the fields in $array, so Drupal will not save them anywhere else
+      $array[$field] = NULL;
     }
   }
 
-  return (!empty($member) ? $member : FALSE);
+  return (!empty($data) ? $data : FALSE);
 }
 
+/**
+ * Implements hook_views_api()
+ */
 function svid_leden_views_api() {
-  return array (
+  return array(
     'api' => 2
   );
-}
-
-function svid_leden_get_user_name() {
-  if (user_is_logged_in()) {
-    return $GLOBALS['user']->name;
-  }
-  else {
-    return variable_get('anonymous');
-  }
-}
-
-function svid_leden_redirect_to_profile() {
-  if (user_is_logged_in()) {
-    drupal_goto('user');
-  }
-  else {
-    drupal_goto('<front>');
-  }
 }
