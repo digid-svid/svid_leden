@@ -218,13 +218,20 @@ function svid_leden_import_batch($import, &$context) {
   $array['student_since'] = $data['studie1ejaar'];
 
   // Check for existing account
-  $account = user_external_load($array['studentnumber']);
+  $result = db_query('SELECT uid FROM {svid_leden} WHERE studentnumber = %d', $array['studentnumber']);
+  if ($result !== FALSE) {
+    $uid = db_result($result);
+  }
 
   // New account
-  if ($account === 0) {
+  if ($uid === FALSE) {
+    $account = NULL;
     $array['pass'] = user_password();
     $array['status'] = 1;
     $array['timezone'] = 3600;
+  }
+  else {
+    $account->uid = $uid;
   }
 
   // Save account information
