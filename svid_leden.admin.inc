@@ -145,6 +145,7 @@ function svid_leden_import_batch($import, &$context) {
     // Initialize results storage
     $context['results']['skipped'] = array();
     $context['results']['failed'] = array();
+    $context['results']['updated'] = array();
     $context['results']['imported'] = array();
     // First line is header
     $line = array_shift($context['sandbox']['records']);
@@ -231,6 +232,7 @@ function svid_leden_import_batch($import, &$context) {
     $array['timezone'] = 3600;
   }
   else {
+    $update = TRUE;
     $account->uid = $uid;
   }
 
@@ -240,6 +242,9 @@ function svid_leden_import_batch($import, &$context) {
   // Check status of save
   if ($account === FALSE) {
     $context['results']['failed'][] = $data['lidnummerid'];
+  }
+  elseif ($update) {
+    $context['results']['updated'][] = $account->uid;
   }
   else {
     $context['results']['imported'][] = $account->uid;
@@ -254,10 +259,11 @@ function svid_leden_import_finished($success, $results, $operations) {
   // Get individual counts
   $skipped = count($results['skipped']);
   $failed = count($results['failed']);
+  $updated = count($results['updated']);
   $imported = count($results['imported']);
 
   // Get processed by summing individuals
-  $processed = $skipped + $failed + $imported;
+  $processed = $skipped + $failed + $updated + $imported;
 
   // Print status messages
   if ($success) {
@@ -269,16 +275,11 @@ function svid_leden_import_finished($success, $results, $operations) {
 
   drupal_set_message(format_plural($processed, 'Processed 1 record', 'Processed @count records'));
   drupal_set_message(format_plural($imported, 'Imported 1 user', 'Imported @count users'));
-
-  if ($skipped > 0) {
-    drupal_set_message(format_plural($skipped, '1 record skipped', '@count records skipped'));
-  }
-
-  if ($failed > 0) {
-    drupal_set_message(format_plural($failed, '1 record failed', '@count records failed'));
-    foreach ($results['failed'] as $lidnummer) {
-      drupal_set_message(t('Importing record %id failed', array('%id' => $lidnummer)), 'error');
-    }
+  drupal_set_message(format_plural($updated, 'Updated 1 user', 'Updated @count users'));
+  drupal_set_message(format_plural($skipped, '1 record skipped', '@count records skipped'));
+  drupal_set_message(format_plural($failed, '1 record failed', '@count records failed'));
+  foreach ($results['failed'] as $lidnummer) {
+    drupal_set_message(t('Importing record %id failed', array('%id' => $lidnummer)), 'error');
   }
 
   drupal_goto('admin/user/user');
