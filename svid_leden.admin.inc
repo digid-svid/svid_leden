@@ -334,15 +334,17 @@ function _record_get_gender($gender) {
 }
 
 function _record_get_birthdate($birthdate) {
-  if (preg_match('#^([0-9]{1,2})-([0-9]{1,2})-([0-9]{4})$#', $data['persongeboortedatum'], $matches)) {
-    $member['birthdate'] = $matches[3] * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
+  if (preg_match('#^([0-9]{1,2})-([0-9]{1,2})-([0-9]{4})$#', $birthdate, $matches)) {
+    return $matches[3] * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
   }
-  elseif (preg_match('#^([0-9]{1,2})([0-9]{2})([0-9]{4})$#', $data['persongeboortedatum'], $matches)) {
-    $member['birthdate'] = $matches[3] * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
+  elseif (preg_match('#^([0-9]{1,2})([0-9]{2})([0-9]{4})$#', $birthdate, $matches)) {
+    return $matches[3] * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
   }
-  elseif (preg_match('#^([0-9]{1,2})([0-9]{2})([0-9]{2})$#', $data['persongeboortedatum'], $matches)) {
-    $member['birthdate'] = ($matches[3] + 1900) * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
+  elseif (preg_match('#^([0-9]{1,2})([0-9]{2})([0-9]{2})$#', $birthdate, $matches)) {
+    return ($matches[3] + 1900) * 10000 + $matches[2] * 100 + $matches[1]; // YYYYMMDD
   }
+
+  return NULL;
 }
 
 function _record_get_telephone_number($number) {
