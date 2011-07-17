@@ -43,8 +43,9 @@ function svid_leden_menu() {
  * Change the permissions that are required to edit the user's profile.
  */
 function svid_leden_menu_alter(&$items) {
-  $items['user/%user_category/edit']['access callback'] = 'user_access';
-  $items['user/%user_category/edit']['access arguments'] = array('administer users');
+  $items['user/%user_category/edit']['page callback'] = 'svid_leden_edit';
+  $items['user/%user_category/edit/account']['access callback'] = 'user_access';
+  $items['user/%user_category/edit/account']['access arguments'] = array('administer users');
 }
 
 /**
@@ -285,7 +286,19 @@ function svid_leden_views_api() {
  *   An array of user-profile categories and items.
  */
 function svid_leden_user_view($account) {
-  $smoelenboek = array(
+  switch ($account->gender) {
+    case GENDER_MALE:
+      $gender = t('Male');
+      break;
+    case GENDER_FEMALE:
+      $gender = t('Female');
+      break;
+    default:
+      $gender = t('Unknown');
+      break;
+  }
+
+  $content = array(
     '#type' => 'user_profile_category',
     '#attributes' => array(
       'class' => 'user-member',
@@ -294,24 +307,35 @@ function svid_leden_user_view($account) {
     '#title' => t('User information'),
   );
 
-  $smoelenboek['mail'] = array(
+  $content['mail'] = array(
     '#type' => 'user_profile_item',
     '#title' => t('E-mail'),
     '#value' => l($account->mail, 'mailto:' . $account->mail),
     '#weight' => -50,
   );
 
-  if ($account->gender) {
-    $smoelenboek['gender'] = array(
+  if (!empty($account->gender)) {
+    $content['gender'] = array(
       '#type' => 'user_profile_item',
       '#title' => t('Gender'),
-      '#value' => ($account->gender == GENDER_MALE) ? t('Male') : t('Female'),
+      '#value' => $gender,
       '#weight' => -47,
     );
   }
 
-  if ($account->tel_home) {
-    $smoelenboek['phone'] = array(
+  if (!empty($account->birthdate)) {
+    $birthdate = svid_leden_get_birthdate($account);
+    $date = mktime(NULL, NULL, NULL, $birthdate['month'], $birthdate['day'], $birthdate['year']);
+    $content['birthdata'] = array(
+      '#type' => 'user_profile_item',
+      '#title' => t('Birthday'),
+      '#value' => format_date($date, 'custom', 'j F'),
+      '#weight' => -45,
+    );
+  }
+
+  if (!empty($account->tel_home)) {
+    $content['phone'] = array(
       '#type' => 'user_profile_item',
       '#title' => t('Home phone number'),
       '#value' => $account->tel_home,
@@ -319,8 +343,8 @@ function svid_leden_user_view($account) {
     );
   }
 
-  if ($account->tel_mobile) {
-    $smoelenboek['mobile'] = array(
+  if (!empty($account->tel_mobile)) {
+    $content['mobile'] = array(
       '#type' => 'user_profile_item',
       '#title' => t('Mobile phone number'),
       '#value' => $account->tel_mobile,
@@ -328,22 +352,22 @@ function svid_leden_user_view($account) {
     );
   }
 
-  if ($account->address && $account->zipcode && $account->city) {
-    $smoelenboek['address'] = array(
+  if (!empty($account->address) && !empty($account->zipcode) && !empty($account->city)) {
+    $content['address'] = array(
       '#type' => 'user_profile_item',
       '#title' => t('Home address'),
       '#value' => sprintf('%s<br />%s %s', $account->address, $account->zipcode, $account->city),
       '#weight' => -40,
     );
 
-    $smoelenboek['map'] = array(
+    $content['map'] = array(
       '#type' => 'user_profile_item',
       '#value' => sprintf('<img src="http://maps.google.com/maps/api/staticmap?markers=%s&zoom=15&size=520x300&maptype=roadmap&sensor=false" alt="%s" />', urlencode(sprintf('%s, %s, %s', $account->address, $account->zipcode, $account->city)), t('Location')),
       '#weight' => -39,
     );
   }
 
-  return $smoelenboek;
+  return $content;
 }
 
 function svid_leden_user_site_settings_form($account) {
@@ -369,11 +393,7 @@ function svid_leden_user_membership_form($account) {
   include drupal_get_path('module', 'svid_leden') . '/svid_leden.countries.inc';
 
   if (!empty($account->birthdate)) {
-    $birthdate = array(
-      'year' => intval(substr($account->birthdate, 0, 4)),
-      'month' => intval(substr($account->birthdate, 4, 2)),
-      'day' => intval(substr($account->birthdate, 6, 2)),
-    );
+    $birthdate = svid_leden_get_birthdate($account);
   }
   else {
     $birthdate = NULL;
@@ -557,4 +577,16 @@ function svid_leden_get_name_from_fields($record) {
   else {
     return sprintf('%s %s %s', $record['personvoornaam'], $record['persontussenvoegsels'], $record['personachternaam']);
   }
+}
+
+function svid_leden_get_birthdate($account) {
+  return array(
+    'year' => intval(substr($account->birthdate, 0, 4)),
+    'month' => intval(substr($account->birthdate, 4, 2)),
+    'day' => intval(substr($account->birthdate, 6, 2)),
+  );
+}
+
+function svid_leden_edit($account) {
+  return user_edit($account, 'membership');
 }
