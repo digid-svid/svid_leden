@@ -31,7 +31,7 @@ function svid_leden_menu() {
       'page callback' => 'drupal_get_form',
       'page arguments' => array('svid_leden_import_form'),
       'file' => 'svid_leden.admin.inc',
-      'access arguments' => array('administer users'),
+      'access arguments' => array('import user data'),
       'type' => MENU_LOCAL_TASK,
     ),
   );
@@ -44,7 +44,7 @@ function svid_leden_menu() {
  */
 function svid_leden_menu_alter(&$items) {
   $items['user/%user_category/edit']['access callback'] = 'user_access';
-  $items['user/%user_category/edit']['access arguments'] = array('edit user profile');
+  $items['user/%user_category/edit']['access arguments'] = array('administer users');
 }
 
 /**
@@ -134,68 +134,57 @@ function svid_leden_user($op, &$edit, &$account, $category = 'account') {
       break;
 
     case 'view':
-      $smoelenboek = array(
-        '#type' => 'user_profile_category',
-        '#attributes' => array(
-          'class' => 'user-member',
-        ),
-        '#weight' => 0,
-        '#title' => t('User information'),
-      );
-
-      $smoelenboek['mail'] = array(
-        '#type' => 'user_profile_item',
-        '#title' => t('E-mail'),
-        '#value' => l($account->mail, 'mailto:' . $account->mail),
-        '#weight' => -50,
-      );
-
-      if ($account->gender) {
-        $smoelenboek['gender'] = array(
-          '#type' => 'user_profile_item',
-          '#title' => t('Gender'),
-          '#value' => ($account->gender == GENDER_MALE) ? t('Male') : t('Female'),
-          '#weight' => -47,
-        );
-      }
-
-      if ($account->tel_home) {
-        $smoelenboek['phone'] = array(
-          '#type' => 'user_profile_item',
-          '#title' => t('Home phone number'),
-          '#value' => $account->tel_home,
-          '#weight' => -48,
-        );
-      }
-
-      if ($account->tel_mobile) {
-        $smoelenboek['mobile'] = array(
-          '#type' => 'user_profile_item',
-          '#title' => t('Mobile phone number'),
-          '#value' => $account->tel_mobile,
-          '#weight' => -49,
-        );
-      }
-
-      if ($account->address && $account->zipcode && $account->city) {
-        $smoelenboek['address'] = array(
-          '#type' => 'user_profile_item',
-          '#title' => t('Home address'),
-          '#value' => sprintf('%s<br />%s %s', $account->address, $account->zipcode, $account->city),
-          '#weight' => -40,
-        );
-
-        $smoelenboek['map'] = array(
-          '#type' => 'user_profile_item',
-          '#value' => sprintf('<img src="http://maps.google.com/maps/api/staticmap?markers=%s&zoom=15&size=640x300&maptype=roadmap&sensor=false" alt="%s" />', urlencode(sprintf('%s, %s, %s', $account->address, $account->zipcode, $account->city)), t('Location')),
-          '#weight' => -39,
-        );
-      }
-
-      $account->content['smoelenboek'] = $smoelenboek;
+      $account->content['smoelenboek'] = svid_leden_user_view($account);
       break;
 
-    default:
+    case 'categories':
+      return array(
+        array(
+          'name' => 'site-settings',
+          'title' => t('Site settings'),
+          'weight' => -40,
+        ),
+        array(
+          'name' => 'membership',
+          'title' => t('Personal information'),
+          'weight' => -50,
+        ),
+      );
+
+    case 'form':
+      $function = sprintf('svid_leden_user_%s_form', str_replace('-', '_', $category));
+      if (function_exists($function)) {
+        return call_user_func($function, $account);
+      }
+      break;
+
+    case 'validate':
+      // Validate user e-mail
+      if ($category === 'membership' && !empty($edit['mail']) && ($error = user_validate_mail($edit['mail']))) {
+        form_set_error('mail', $error);
+      }
+      // Validate authmap data
+      if ($category === 'membership' && empty($edit['studentnumber']) && empty($edit['netid'])) {
+        form_set_error('studentnumber', t('You need to set either the student number of the NetID of the user, as one of these is required for the ASelect login process'));
+      }
+      break;
+
+    case 'submit':
+      // Parse name to username
+      if ($category === 'membership' && !empty($edit['firstname']) && !empty($edit['lastname'])) {
+        $edit['name'] = svid_leden_get_name_from_fields($edit);
+      }
+      // Parse birthdate selects
+      if ($category === 'membership' && !empty($edit['birthdate'])) {
+        $edit['birthdate'] = $edit['birthdate']['year'] * 10000 + $edit['birthdate']['month'] * 100 + $edit['birthdate']['day'];
+      }
+      // Add authmap data
+      if ($category === 'membership' && !empty($edit['studentnumber'])) {
+        $edit['auth_aselect_tudstudentnumber'] = $edit['studentnumber'];
+      }
+      if ($category === 'membership' && !empty($edit['netid'])) {
+        $edit['auth_aselect_aselectuid'] = $edit['netid'] . '@tudelft.nl';
+      }
       break;
   }
 }
@@ -204,7 +193,11 @@ function svid_leden_user($op, &$edit, &$account, $category = 'account') {
  * Implements hook_perm()
  */
 function svid_leden_perm() {
-  return array('edit user profile');
+  return array(
+    'edit personalia',
+    'edit own personalia',
+    'import user data',
+  );
 }
 
 /**
@@ -281,4 +274,287 @@ function svid_leden_views_api() {
   return array(
     'api' => 2
   );
+}
+
+/**
+ * Add content to the user profile
+ *
+ * @param $account
+ *   The account of which the profile is being viewed.
+ * @return
+ *   An array of user-profile categories and items.
+ */
+function svid_leden_user_view($account) {
+  $smoelenboek = array(
+    '#type' => 'user_profile_category',
+    '#attributes' => array(
+      'class' => 'user-member',
+    ),
+    '#weight' => 0,
+    '#title' => t('User information'),
+  );
+
+  $smoelenboek['mail'] = array(
+    '#type' => 'user_profile_item',
+    '#title' => t('E-mail'),
+    '#value' => l($account->mail, 'mailto:' . $account->mail),
+    '#weight' => -50,
+  );
+
+  if ($account->gender) {
+    $smoelenboek['gender'] = array(
+      '#type' => 'user_profile_item',
+      '#title' => t('Gender'),
+      '#value' => ($account->gender == GENDER_MALE) ? t('Male') : t('Female'),
+      '#weight' => -47,
+    );
+  }
+
+  if ($account->tel_home) {
+    $smoelenboek['phone'] = array(
+      '#type' => 'user_profile_item',
+      '#title' => t('Home phone number'),
+      '#value' => $account->tel_home,
+      '#weight' => -48,
+    );
+  }
+
+  if ($account->tel_mobile) {
+    $smoelenboek['mobile'] = array(
+      '#type' => 'user_profile_item',
+      '#title' => t('Mobile phone number'),
+      '#value' => $account->tel_mobile,
+      '#weight' => -49,
+    );
+  }
+
+  if ($account->address && $account->zipcode && $account->city) {
+    $smoelenboek['address'] = array(
+      '#type' => 'user_profile_item',
+      '#title' => t('Home address'),
+      '#value' => sprintf('%s<br />%s %s', $account->address, $account->zipcode, $account->city),
+      '#weight' => -40,
+    );
+
+    $smoelenboek['map'] = array(
+      '#type' => 'user_profile_item',
+      '#value' => sprintf('<img src="http://maps.google.com/maps/api/staticmap?markers=%s&zoom=15&size=520x300&maptype=roadmap&sensor=false" alt="%s" />', urlencode(sprintf('%s, %s, %s', $account->address, $account->zipcode, $account->city)), t('Location')),
+      '#weight' => -39,
+    );
+  }
+
+  return $smoelenboek;
+}
+
+function svid_leden_user_site_settings_form($account) {
+  $form = array();
+  // Add language selection form
+  if (function_exists('locale_user')) {
+    $form += locale_user('form', NULL, $account, 'account');
+  }
+  // Add system settings form
+  if (function_exists('system_user')) {
+    $form += system_user('form', NULL, $account, 'account');
+  }
+
+  if (isset($form['timezone'])) {
+    $form['timezone']['#collapsible'] = FALSE;
+  }
+
+  return $form;
+}
+
+function svid_leden_user_membership_form($account) {
+  // Get the list of coutries
+  include drupal_get_path('module', 'svid_leden') . '/svid_leden.countries.inc';
+
+  if (!empty($account->birthdate)) {
+    $birthdate = array(
+      'year' => intval(substr($account->birthdate, 0, 4)),
+      'month' => intval(substr($account->birthdate, 4, 2)),
+      'day' => intval(substr($account->birthdate, 6, 2)),
+    );
+  }
+  else {
+    $birthdate = NULL;
+  }
+
+  $form = array();
+
+  $form['personalia'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Personalia'),
+    '#weight' => -50,
+    'firstname' => array(
+      '#type' => 'textfield',
+      '#title' => t('Firstname'),
+      '#default_value' => $account->firstname,
+      '#maxlength' => 64,
+      '#disabled' => !((user_access('edit own personalia') && $GLOBALS['user']->uid === $account->uid) || user_access('edit personalia')),
+    ),
+    'prefix' => array(
+      '#type' => 'textfield',
+      '#title' => t('Prefix'),
+      '#default_value' => $account->prefix,
+      '#maxlength' => 16,
+      '#disabled' => !((user_access('edit own personalia') && $GLOBALS['user']->uid === $account->uid) || user_access('edit personalia')),
+    ),
+    'lastname' => array(
+      '#type' => 'textfield',
+      '#title' => t('Lastname'),
+      '#default_value' => $account->lastname,
+      '#maxlength' => 64,
+      '#disabled' => !((user_access('edit own personalia') && $GLOBALS['user']->uid === $account->uid) || user_access('edit personalia')),
+    ),
+    'gender' => array(
+      '#type' => 'radios',
+      '#title' => t('Gender'),
+      '#default_value' => $account->gender,
+      '#options' => array(
+        GENDER_UNKNOWN => t('Unknown'),
+        GENDER_MALE => t('Male'),
+        GENDER_FEMALE => t('Female'),
+      ),
+      '#disabled' => !((user_access('edit own personalia') && $GLOBALS['user']->uid === $account->uid) || user_access('edit personalia')),
+    ),
+    'birthdate' => array(
+      '#type' => 'date',
+      '#title' => t('Birthdate'),
+      '#default_value' => $birthdate,
+      '#disabled' => !((user_access('edit own personalia') && $GLOBALS['user']->uid === $account->uid) || user_access('edit personalia')),
+    ),
+  );
+
+  $form['contact'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Contact information'),
+    '#weight' => -45,
+    'mail' => array(
+      '#type' => 'textfield',
+      '#title' => t('E-mail address'),
+      '#default_value' => $account->mail,
+      '#maxlength' => EMAIL_MAX_LENGTH,
+      '#description' => t('A valid e-mail address. All e-mails from the system will be sent to this address.'),
+      '#required' => TRUE,
+    ),
+    'tel_mobile' => array(
+      '#type' => 'textfield',
+      '#title' => t('Mobile phone number'),
+      '#default_value' => $account->tel_mobile,
+      '#maxlength' => 20,
+    ),
+    'tel_home' => array(
+      '#type' => 'textfield',
+      '#title' => t('Home phone number'),
+      '#default_value' => $account->tel_home,
+      '#maxlength' => 20,
+    ),
+    'tel_parents' => array(
+      '#type' => 'textfield',
+      '#title' => t('Parents\' phone number'),
+      '#default_value' => $account->tel_parents,
+      '#maxlength' => 20,
+      '#description' => t('Your parents\' phone number. This number will not be made public.'),
+    ),
+  );
+
+  $form['residence'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Residential information'),
+    '#weight' => -40,
+    'address' => array(
+      '#type' => 'textfield',
+      '#title' => t('Address'),
+      '#default_value' => $account->address,
+      '#maxlength' => 128,
+    ),
+    'zipcode' => array(
+      '#type' => 'textfield',
+      '#title' => t('Postal code'),
+      '#default_value' => $account->zipcode,
+      '#maxlength' => 12,
+    ),
+    'city' => array(
+      '#type' => 'textfield',
+      '#title' => t('City'),
+      '#default_value' => $account->city,
+      '#maxlength' => 64,
+    ),
+    'country' => array(
+      '#type' => 'select',
+      '#title' => t('Country'),
+      '#default_value' => empty($account->country) ? 'nl' : $account->country,
+      '#options' => $countries,
+    ),
+  );
+
+  if (user_access('administer users')) {
+    $form['study'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Student information'),
+      '#weight' => -10,
+      'studentnumber' => array(
+        '#type' => 'textfield',
+        '#title' => t('Student number'),
+        '#default_value' => $account->studentnumber,
+        '#maxlength' => 7,
+      ),
+      'netid' => array(
+        '#type' => 'textfield',
+        '#title' => t('NetID'),
+        '#default_value' => $account->netid,
+        '#maxlength' => 255,
+      ),
+      'student_since' => array(
+        '#type' => 'textfield',
+        '#title' => t('Student since'),
+        '#default_value' => $account->student_since,
+        '#maxlength' => 4,
+      ),
+    );
+    $form['member'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Membership information'),
+      '#weight' => -5,
+      'member_since' => array(
+        '#type' => 'textfield',
+        '#title' => t('Member since'),
+        '#default_value' => $account->member_since,
+        '#maxlength' => 4,
+      ),
+      'membership' => array(
+        '#type' => 'select',
+        '#title' => t('Membership status'),
+        '#default_value' => $account->membership,
+        '#options' => array(
+          -1 => t('Unknown'),
+          0 => t('No member'),
+          1 => t('Regular member'),
+          2 => t('Current board member'),
+          3 => t('Ex board member'),
+          4 => t('Special member'),
+          5 => t('Honorary member'),
+        ),
+      ),
+    );
+  }
+
+  return $form;
+}
+
+/**
+ * Parse the name fields to set an updated username.
+ *
+ * @param $record
+ *   The array with variables that has been submitted.
+ * @return
+ *   The parsed username.
+ */
+function svid_leden_get_name_from_fields($record) {
+  if (empty($record['persontussenvoegsels'])) {
+    return sprintf('%s %s', $record['personvoornaam'], $record['personachternaam']);
+  }
+  else {
+    return sprintf('%s %s %s', $record['personvoornaam'], $record['persontussenvoegsels'], $record['personachternaam']);
+  }
 }

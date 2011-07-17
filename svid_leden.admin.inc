@@ -192,7 +192,7 @@ function svid_leden_import_batch($import, &$context) {
   $array['auth_aselect'] = $array['studentnumber'];
 
   // Basic Drupal information
-  $array['name'] = _record_get_name($data);
+  $array['name'] = svid_leden_get_name_from_fields($data);
   $array['mail'] = empty($data['homeemail']) ? $array['studentnumber'] . '@studienummer.tudelft.nl' : $data['homeemail'];
 
   // Personalia
@@ -310,15 +310,6 @@ function _can_skip_record($record) {
 
 function _record_has_required_fields($record) {
   return !(empty($record['personvoornaam']) || empty($record['personachternaam']));
-}
-
-function _record_get_name($record) {
-  if (empty($record['persontussenvoegsels'])) {
-    return sprintf('%s %s', $record['personvoornaam'], $record['personachternaam']);
-  }
-  else {
-    return sprintf('%s %s %s', $record['personvoornaam'], $record['persontussenvoegsels'], $record['personachternaam']);
-  }
 }
 
 function _record_get_gender($gender) {
